@@ -66,15 +66,22 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     private Model hudHeaderModel, hudHeaderInsetModel, hudTurnModel;
     private Model darkPointModel, lightPointModel, pointShadowModel;
     private Model darkChecker, lightChecker;
-    private Model diceModel, dieDotModel, checkerShadowModel;
+    private Model diceModel, checkerShadowModel;
     private Model accentModel;
     private Model diceTrayModel, screwModel;
     private Model diceEdgeModel;
+    private Model pointRailModel, pointGoldRailModel, pointGoldEndModel;
+    private Model doublingCubeModel;
+    private Material doublingCubeTopMaterial;
+    private ModelInstance doublingCubeInstance;
     private Texture woodGrainTexture, woodNormalTexture;
     private Texture lightCheckerTexture, lightCheckerNormalTexture;
     private Texture darkCheckerTexture, darkCheckerNormalTexture;
-    private Texture diceTexture, diceNormalTexture;
+    private Texture damaskTexture, checkerShadowTexture;
+    private final Texture[] dieFaceTextures = new Texture[6];
+    private Texture doublingCubeTexture;
     private Cubemap studioCubemap;
+    private int doublingCubeValue = 64;
     
     private float lastX, lastY;
     private boolean dragging;
@@ -114,17 +121,17 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         resetGameState();
 
         environment.set(new ColorAttribute(
-                ColorAttribute.AmbientLight, 0.44f, 0.42f, 0.38f, 1f));
-        // Large warm key: stronger grazing highlights reveal the real walnut grain,
-        // checker bevels and the rounded dice without washing the scene out.
+                ColorAttribute.AmbientLight, 0.34f, 0.34f, 0.36f, 1f));
+        // Controlled warm key: the baked board shading carries the broad studio
+        // falloff, while this light supplies the crisp bevel and die highlights.
         environment.add(new DirectionalLight().set(
-                1.60f, 1.38f, 1.12f, -0.52f, -1.0f, -0.28f));
-        // Soft neutral fill keeps the shadow side readable on mobile displays.
+                1.25f, 1.15f, 0.98f, -0.52f, -1.0f, -0.28f));
+        // Cool, low fill preserves detail in the burgundy rails and dark checkers.
         environment.add(new DirectionalLight().set(
-                0.34f, 0.36f, 0.40f, 0.48f, -0.58f, 0.64f));
-        // Very low warm rim light separates the outer rails from the dark floor.
+                0.18f, 0.20f, 0.23f, 0.48f, -0.58f, 0.64f));
+        // A restrained warm rim separates the case from the dark floor.
         environment.add(new DirectionalLight().set(
-                0.16f, 0.12f, 0.07f, 0.05f, -0.35f, -0.94f));
+                0.08f, 0.06f, 0.04f, 0.05f, -0.35f, -0.94f));
 
         woodGrainTexture = new Texture(
                 Gdx.files.internal("textures/board_wood_texture.jpg"), true);
@@ -134,14 +141,19 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         woodGrainTexture.setWrap(
                 Texture.TextureWrap.Repeat,
                 Texture.TextureWrap.Repeat);
-        // Premium palette: aged ivory, dark chocolate lacquer, natural bone.
+        // Premium palette: aged ivory and dark chocolate checkers. The playfield
+        // itself is a baked bronze-gray damask rather than another wood panel.
         lightCheckerTexture = createPieceTexture(256, 0.90f, 0.84f, 0.72f, 1.00f, 0.97f, 0.88f, 101L);
         darkCheckerTexture = createPieceTexture(256, 0.13f, 0.06f, 0.03f, 0.42f, 0.23f, 0.11f, 202L);
-        diceTexture = createPieceTexture(256, 0.91f, 0.82f, 0.67f, 0.99f, 0.91f, 0.76f, 303L);
+        damaskTexture = createDamaskTexture(1024, 512);
+        checkerShadowTexture = createSoftShadowTexture(96);
+        for (int i = 0; i < dieFaceTextures.length; i++) {
+            dieFaceTextures[i] = createDieFaceTexture(96, i + 1);
+        }
+        doublingCubeTexture = createDoublingCubeTexture(doublingCubeValue);
         woodNormalTexture = createNormalTexture(256, 11f, 0.55f, 404L);
         lightCheckerNormalTexture = createNormalTexture(256, 5f, 0.34f, 505L);
         darkCheckerNormalTexture = createNormalTexture(256, 5f, 0.34f, 606L);
-        diceNormalTexture = createNormalTexture(256, 4f, 0.22f, 707L);
         studioCubemap = createStudioCubemap();
         buildBoard();
         updateCamera();
@@ -176,6 +188,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         selectedPoint = -1;
         selectedBar = false;
         openingRollPending = true;
+        doublingCubeValue = 64;
         status = "Roll the dice to start";
         statusTimer = 0f;
     }
@@ -507,7 +520,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         // only a small corner respond to touch.
         Plane plane = new Plane(Vector3.Y, 0.93f);
         if (!Intersector.intersectRayPlane(ray, plane, tmp)) return -1;
-        final float r2 = 0.72f * 0.72f;
+        final float r2 = 0.43f * 0.43f;
         float dxA = tmp.x + 0.48f;
         float dxB = tmp.x - 0.48f;
         if (dxA * dxA + tmp.z * tmp.z <= r2) return 0;
@@ -566,19 +579,17 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
         addStateStacks();
 
+        // The pips are baked into all six faces, so the dice remain legible
+        // during the roll and never look like two blank paper cards. Once the
+        // animation settles, rotate the correct numbered face to the top.
         dieInstanceA = new ModelInstance(diceModel, -0.48f, 0.93f, 0f);
         dieInstanceB = new ModelInstance(diceModel,  0.48f, 0.93f, 0f);
-        dieInstanceA.transform.rotate(Vector3.Y, -9f);
-        dieInstanceB.transform.rotate(Vector3.Y, 12f);
+        if (diceRollTime <= 0f) {
+            setDieFace(dieInstanceA, dice[0] > 0 ? dice[0] : 1);
+            setDieFace(dieInstanceB, dice[1] > 0 ? dice[1] : 1);
+        }
         gameObjects.add(dieInstanceA); models.add(dieInstanceA);
         gameObjects.add(dieInstanceB); models.add(dieInstanceB);
-        // During the roll the cubes are intentionally clean: pips are added
-        // only after the final face is settled, so they never float while the
-        // cube spins. The final face is rebuilt atomically when the animation ends.
-        if (diceRollTime <= 0f) {
-            if (dice[0] > 0) addTopPips(-0.48f, 1.302f, 0f, dice[0]);
-            if (dice[1] > 0) addTopPips( 0.48f, 1.302f, 0f, dice[1]);
-        }
     }
 
     private void addStateStacks() {
@@ -591,8 +602,9 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
             float z = p < 12 ? -STACK_Z : STACK_Z;
             // One contact shadow per column; discs then stack exactly one
             // thickness apart so none of them clips into another.
-            ModelInstance shadow = new ModelInstance(checkerShadowModel, x, 0.312f, z);
-            shadow.transform.scl(1.08f, 1f, 0.78f);
+            ModelInstance shadow = new ModelInstance(
+                    checkerShadowModel, x + 0.065f, 0.312f, z + 0.045f);
+            shadow.transform.scl(1.62f, 1f, 1.12f);
             gameObjects.add(shadow); models.add(shadow);
             for (int i = 0; i < count; i++) {
                 ModelInstance piece = new ModelInstance(model, x, STACK_Y0 + i * STACK_STEP, z);
@@ -628,8 +640,8 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
             if (level == 0) {
                 ModelInstance shadow = new ModelInstance(
-                        checkerShadowModel, x, 0.229f, z);
-                shadow.transform.scl(0.72f, 1f, 0.72f);
+                        checkerShadowModel, x + 0.045f, 0.229f, z + 0.035f);
+                shadow.transform.scl(1.05f, 1f, 0.86f);
                 gameObjects.add(shadow);
                 models.add(shadow);
             }
@@ -798,6 +810,19 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         if (allDiceUsed() || !hasAnyMove()) finishMoveState();
     }
 
+    private void updateDoublingCubeValue() {
+        int completedGroups = (lightOff + darkOff) / 5;
+        int next = 64;
+        for (int i = 0; i < completedGroups; i++) next = Math.max(1, next / 2);
+        if (next == doublingCubeValue || doublingCubeModel == null) return;
+        doublingCubeValue = next;
+        if (doublingCubeTexture != null) doublingCubeTexture.dispose();
+        doublingCubeTexture = createDoublingCubeTexture(doublingCubeValue);
+        if (doublingCubeTopMaterial != null) {
+            doublingCubeTopMaterial.set(TextureAttribute.createDiffuse(doublingCubeTexture));
+        }
+    }
+
     private void tryBearOff() {
         if (selectedPoint < 0 || !allCheckersHome()) return;
         int from = selectedPoint;
@@ -817,6 +842,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
         points[from] -= lightTurn ? 1 : -1;
         if (lightTurn) lightOff++; else darkOff++;
+        updateDoublingCubeValue();
         dieUsed[dieIndex] = true;
         selectedDie = -1;
         selectedPoint = -1;
@@ -978,6 +1004,223 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         return smoothNoise(x, y) * 0.72f + smoothNoise(x * 2.7f, y * 2.7f) * 0.28f;
     }
 
+    /**
+     * Bronze-gray damask artwork for the recessed playfield. The lightmap is
+     * multiplied into the pixels at generation time: this keeps the runtime
+     * shader on the stock mobile DefaultShader and still gives the board a
+     * deliberate perimeter falloff, column AO and bar/rail contact strips.
+     */
+    private Texture createDamaskTexture(int width, int height) {
+        Pixmap artwork = new Pixmap(width, height, Pixmap.Format.RGBA8888);
+        Pixmap lightmap = createLightmapPixmap(width, height);
+        final float[] baseColor = {0.66f, 0.58f, 0.45f};
+
+        for (int y = 0; y < height; y++) {
+            float v = y / (float)(height - 1);
+            for (int x = 0; x < width; x++) {
+                float u = x / (float)(width - 1);
+                float cu = u * 4f;
+                float cv = v * 3f;
+                float fu = cu - MathUtils.floor(cu);
+                float fv = cv - MathUtils.floor(cv);
+                float mu = Math.abs(fu - 0.5f) * 2f;
+                float mv = Math.abs(fv - 0.5f) * 2f;
+                float dx = mu - 0.5f;
+                float dy = mv - 0.5f;
+                float radius = (float)Math.sqrt(dx * dx + dy * dy);
+                float angle = (float)Math.atan2(dy, dx);
+
+                // Mirrored arabesque: eight petals, a small central rosette and
+                // two tendrils. It repeats as a 4 by 3 luxury-cloth lattice.
+                float petals = (float)Math.pow(Math.abs(Math.cos(angle * 4f)), 1.4);
+                float rosette = MathUtils.clamp(1f - radius * 2.05f, 0f, 1f) * petals;
+                float tendrilWave = 0.5f + 0.5f * MathUtils.sin(
+                        radius * 28f - angle * 3.0f + MathUtils.sin(angle * 2f) * 0.8f);
+                float tendrils = MathUtils.clamp(1f - Math.abs(radius - 0.27f) * 5.4f, 0f, 1f)
+                        * tendrilWave;
+                float lattice = 0.5f + 0.5f * MathUtils.sin(cu * MathUtils.PI * 2f)
+                        * MathUtils.sin(cv * MathUtils.PI * 2f);
+                float motif = MathUtils.clamp(rosette * 0.72f + tendrils * 0.46f, 0f, 1f);
+                float noise = smoothNoise(u * 9.0f + 4.3f, v * 7.0f + 1.7f);
+                float luminance = 0.73f + motif * 0.105f + lattice * 0.034f
+                        + (noise - 0.5f) * 0.024f;
+
+                int packed = lightmap.getPixel(x, y);
+                float baked = ((packed >>> 24) & 0xff) / 255f;
+                float r = MathUtils.clamp(baseColor[0] * luminance * baked, 0f, 1f);
+                float g = MathUtils.clamp(baseColor[1] * luminance * baked, 0f, 1f);
+                float b = MathUtils.clamp(baseColor[2] * luminance * baked, 0f, 1f);
+                artwork.setColor(r, g, b, 1f);
+                artwork.drawPixel(x, y);
+            }
+        }
+        lightmap.dispose();
+        Texture result = new Texture(artwork, true);
+        result.setFilter(Texture.TextureFilter.MipMapLinearLinear,
+                Texture.TextureFilter.Linear);
+        result.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
+        artwork.dispose();
+        return result;
+    }
+
+    private Pixmap createLightmapPixmap(int width, int height) {
+        Pixmap lightmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
+        for (int y = 0; y < height; y++) {
+            float v = y / (float)(height - 1);
+            for (int x = 0; x < width; x++) {
+                float u = x / (float)(width - 1);
+                float edgeDistance = Math.min(Math.min(u, 1f - u), Math.min(v, 1f - v));
+                float edge = MathUtils.clamp(1f - edgeDistance / 0.18f, 0f, 1f);
+                float factor = 1f - 0.30f * edge * edge;
+
+                // Narrow AO at the twelve checker columns and at the two rows
+                // where the stacked pieces actually touch the playfield.
+                float columnAo = 0f;
+                for (int i = 0; i < 12; i++) {
+                    float column = (i + 0.5f) / 12f;
+                    float d = (u - column) / 0.016f;
+                    columnAo = Math.max(columnAo, (float)Math.exp(-d * d));
+                }
+                float rowTop = (float)Math.exp(-Math.pow((v - 0.105f) / 0.030f, 2.0));
+                float rowBottom = (float)Math.exp(-Math.pow((v - 0.895f) / 0.030f, 2.0));
+                float barAo = (float)Math.exp(-Math.pow((u - 0.5f) / 0.030f, 2.0));
+                float railAo = Math.max(
+                        (float)Math.exp(-Math.pow(v / 0.025f, 2.0)),
+                        (float)Math.exp(-Math.pow((1f - v) / 0.025f, 2.0)));
+                factor -= columnAo * 0.075f;
+                factor -= Math.max(rowTop, rowBottom) * 0.115f;
+                factor -= barAo * 0.13f;
+                factor -= railAo * 0.10f;
+                factor = MathUtils.clamp(factor, 0.54f, 1f);
+                lightmap.setColor(factor, factor, factor, 1f);
+                lightmap.drawPixel(x, y);
+            }
+        }
+        return lightmap;
+    }
+
+    private Texture createSoftShadowTexture(int size) {
+        Pixmap pm = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        for (int y = 0; y < size; y++) {
+            float v = (y + 0.5f) / size * 2f - 1f;
+            for (int x = 0; x < size; x++) {
+                float u = (x + 0.5f) / size * 2f - 1f;
+                float distance = (float)Math.sqrt(u * u + v * v);
+                float alpha = distance >= 1f
+                        ? 0f
+                        : 0.38f * (1f - distance) * (1f - distance);
+                pm.setColor(0.008f, 0.006f, 0.005f, alpha);
+                pm.drawPixel(x, y);
+            }
+        }
+        Texture result = new Texture(pm, true);
+        result.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        result.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+        pm.dispose();
+        return result;
+    }
+
+    private Texture createDieFaceTexture(int size, int number) {
+        Pixmap pm = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        for (int y = 0; y < size; y++) {
+            float v = y / (float)(size - 1);
+            for (int x = 0; x < size; x++) {
+                float u = x / (float)(size - 1);
+                float n = smoothNoise(u * 5.0f + number * 0.41f, v * 4.0f + 2.7f);
+                float edge = Math.max(Math.abs(u - 0.5f), Math.abs(v - 0.5f));
+                float shade = 0.92f - edge * 0.07f + (n - 0.5f) * 0.025f;
+                pm.setColor(shade, shade * 0.965f, shade * 0.88f, 1f);
+                pm.drawPixel(x, y);
+            }
+        }
+
+        // A thin dark edge keeps the ivory face separated from adjacent faces.
+        pm.setColor(0.38f, 0.22f, 0.15f, 1f);
+        pm.drawRectangle(3, 3, size - 7, size - 7);
+        pm.setColor(0.09f, 0.025f, 0.022f, 1f);
+        int q = size / 4;
+        int c = size / 2;
+        int r = Math.max(7, size / 10);
+        int[][] positions;
+        switch (number) {
+            case 1: positions = new int[][]{{c, c}}; break;
+            case 2: positions = new int[][]{{q, q}, {size - q, size - q}}; break;
+            case 3: positions = new int[][]{{q, q}, {c, c}, {size - q, size - q}}; break;
+            case 4: positions = new int[][]{{q, q}, {size - q, q}, {q, size - q}, {size - q, size - q}}; break;
+            case 5: positions = new int[][]{{q, q}, {size - q, q}, {c, c}, {q, size - q}, {size - q, size - q}}; break;
+            default: positions = new int[][]{{q, q}, {size - q, q}, {q, c}, {size - q, c}, {q, size - q}, {size - q, size - q}}; break;
+        }
+        for (int[] position : positions) {
+            pm.setColor(0.30f, 0.14f, 0.075f, 1f);
+            pm.fillCircle(position[0], position[1], r + 2);
+            pm.setColor(0.025f, 0.012f, 0.010f, 1f);
+            pm.fillCircle(position[0], position[1], r);
+            pm.setColor(0.12f, 0.055f, 0.035f, 1f);
+            pm.fillCircle(position[0] - 1, position[1] - 1, Math.max(3, r - 3));
+        }
+        Texture result = new Texture(pm, true);
+        result.setFilter(Texture.TextureFilter.MipMapLinearLinear,
+                Texture.TextureFilter.Linear);
+        result.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+        pm.dispose();
+        return result;
+    }
+
+    private Texture createDoublingCubeTexture(int value) {
+        final int size = 128;
+        Pixmap pm = new Pixmap(size, size, Pixmap.Format.RGBA8888);
+        pm.setColor(0.24f, 0.035f, 0.055f, 1f);
+        pm.fill();
+        pm.setColor(0.78f, 0.54f, 0.22f, 1f);
+        pm.fillRectangle(5, 5, size - 10, 4);
+        pm.fillRectangle(5, size - 9, size - 10, 4);
+        pm.fillRectangle(5, 5, 4, size - 10);
+        pm.fillRectangle(size - 9, 5, 4, size - 10);
+        String text = String.valueOf(Math.max(1, value));
+        int digitWidth = text.length() == 1 ? 48 : 36;
+        int gap = text.length() == 1 ? 0 : 8;
+        int total = text.length() * digitWidth + (text.length() - 1) * gap;
+        int x = (size - total) / 2;
+        for (int i = 0; i < text.length(); i++) {
+            pm.setColor(0.96f, 0.86f, 0.58f, 1f);
+            drawSevenSegmentDigit(pm, text.charAt(i) - '0', x, 30,
+                    digitWidth, 68, 8);
+            x += digitWidth + gap;
+        }
+        Texture result = new Texture(pm, true);
+        result.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        result.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+        pm.dispose();
+        return result;
+    }
+
+    private void drawSevenSegmentDigit(Pixmap pm, int digit, int x, int y,
+                                       int width, int height, int thickness) {
+        final boolean[][] segments = {
+                {true, true, true, true, true, true, false},
+                {false, true, true, false, false, false, false},
+                {true, true, false, true, true, false, true},
+                {true, true, true, true, false, false, true},
+                {false, true, true, false, false, true, true},
+                {true, false, true, true, false, true, true},
+                {true, false, true, true, true, true, true},
+                {true, true, true, false, false, false, false},
+                {true, true, true, true, true, true, true},
+                {true, true, true, true, false, true, true}
+        };
+        boolean[] on = segments[MathUtils.clamp(digit, 0, 9)];
+        int innerWidth = width - thickness * 2;
+        int verticalHeight = height / 2 - thickness;
+        if (on[0]) pm.fillRectangle(x + thickness, y + height - thickness, innerWidth, thickness);
+        if (on[1]) pm.fillRectangle(x + width - thickness, y + height / 2, thickness, verticalHeight);
+        if (on[2]) pm.fillRectangle(x + width - thickness, y, thickness, verticalHeight);
+        if (on[3]) pm.fillRectangle(x + thickness, y, innerWidth, thickness);
+        if (on[4]) pm.fillRectangle(x, y, thickness, verticalHeight);
+        if (on[5]) pm.fillRectangle(x, y + height / 2, thickness, verticalHeight);
+        if (on[6]) pm.fillRectangle(x + thickness, y + height / 2 - thickness / 2,
+                innerWidth, thickness);
+    }
+
     private Texture createNaturalWoodTexture(int size) {
         // Soft, irregular walnut grain. The pattern is deliberately aperiodic:
         // no sine bands, no repeated horizontal stripes, and only subtle contrast.
@@ -1035,11 +1278,11 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     }
 
     private Material boardWoodMaterial() {
-        // Rich mid-dark walnut playfield with the photographic grain texture:
-        // clearly brown furniture wood, varnished but not glowing bright.
-        return material(woodGrainTexture, woodNormalTexture,
-                0.80f, 0.545f, 0.315f,
-                0.45f, 0.30f, 0.18f, 55f);
+        // The playfield is the hero surface: a bronze-gray damask with baked
+        // vignette/AO. Frame and base retain the real walnut photo texture.
+        return material(damaskTexture, null,
+                1.00f, 1.00f, 1.00f,
+                0.24f, 0.21f, 0.18f, 24f);
     }
 
     /** Polished brass hardware: clasps, corner caps and trim. */
@@ -1061,13 +1304,6 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         Material m = material(lightCheckerTexture, lightCheckerNormalTexture,
                 0.96f, 0.89f, 0.77f, 0.92f, 0.78f, 0.58f, 118f);
         applyStudioReflection(m, 0.22f, 0.18f, 0.12f);
-        return m;
-    }
-
-    private Material boneDiceMaterial() {
-        Material m = material(diceTexture, diceNormalTexture,
-                0.96f, 0.87f, 0.69f, 0.94f, 0.80f, 0.60f, 104f);
-        applyStudioReflection(m, 0.20f, 0.16f, 0.10f);
         return m;
     }
 
@@ -1283,7 +1519,24 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         Model barCap = mb.createBox(0.24f, 0.035f, 6.95f, barCapMaterial, attrs);
         models.add(new ModelInstance(barCap, 0f, 0.47f, 0f));
 
-        // Points on walnut: deep chocolate brown and ivory. The dark points sit
+        // Burgundy point rails sit just above the damask and below the raised
+        // alternating point inlays. The narrow gold perimeter makes each
+        // triangle read as a separate hand-inlaid panel instead of a flat decal.
+        pointRailModel = mb.createBox(0.85f, 0.026f, 3.20f,
+                new Material(
+                        ColorAttribute.createDiffuse(0.30f, 0.07f, 0.09f, 1f),
+                        ColorAttribute.createSpecular(0.48f, 0.16f, 0.13f, 1f),
+                        FloatAttribute.createShininess(72f)), attrs);
+        pointGoldRailModel = mb.createBox(0.038f, 0.018f, 3.04f,
+                pointGoldMaterial(), attrs);
+        pointGoldEndModel = mb.createBox(0.76f, 0.018f, 0.038f,
+                pointGoldMaterial(), attrs);
+        for (int i = 0; i < 12; i++) {
+            addPointRailInstances(XS[i], -2.02f, false);
+            addPointRailInstances(XS[i],  2.02f, true);
+        }
+
+        // Points on the damask: deep chocolate brown and ivory. The dark points sit
         // clearly below the playfield value so every triangle reads instantly,
         // while the raised top cap keeps a lacquered highlight on mobile light.
         darkPointModel = createPointModel(
@@ -1376,27 +1629,18 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                         FloatAttribute.createShininess(120f)),
                 attrs);
 
-        // A die is a clean rounded-corner cube with crisp edges so its faces
-        // read instantly at phone distance; the subtle bone texture gives it
-        // warmth without turning the silhouette into stacked bands.
-        diceModel = mb.createBox(0.72f, 0.72f, 0.72f, boneDiceMaterial(), attrs);
-        // Bold near-black recessed-style pips on the ivory die, like real
-        // drilled bone dice.
-        dieDotModel = mb.createCylinder(
-                0.105f, 0.028f, 0.105f, 32,
-                new Material(
-                        ColorAttribute.createDiffuse(0.015f, 0.012f, 0.010f, 1f),
-                        ColorAttribute.createSpecular(0.10f, 0.08f, 0.06f, 1f),
-                        FloatAttribute.createShininess(20f)),
-                attrs);
+        // Small bone cube whose six faces already contain large, high-contrast
+        // pips. The visible top face is rotated to the rolled value at settle.
+        diceModel = createPippedDieModel(0.62f, attrs);
 
-        // Soft contact shadow under every checker. It is intentionally subtle:
-        // enough to visually seat the pieces on the wood without looking painted on.
+        // A radial alpha texture replaces the old hard black cylinder. It fades
+        // from 0.38 opacity at the contact point to zero at the soft edge.
         checkerShadowModel = mb.createCylinder(
-                0.46f, 0.006f, 0.46f, 40,
+                0.50f, 0.008f, 0.50f, 48,
                 new Material(
-                        ColorAttribute.createDiffuse(0.015f, 0.010f, 0.008f, 0.24f),
-                        new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 0.24f)),
+                        TextureAttribute.createDiffuse(checkerShadowTexture),
+                        ColorAttribute.createDiffuse(1f, 1f, 1f, 1f),
+                        new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA, 1f)),
                 attrs);
 
         // Small gold marker used for legal-move hints (no center instance:
@@ -1426,6 +1670,13 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         models.add(new ModelInstance(trayTrimX, 0f, 0.54f,  0.64f));
         models.add(new ModelInstance(trayTrimZ, -1.19f, 0.54f, 0f));
         models.add(new ModelInstance(trayTrimZ,  1.19f, 0.54f, 0f));
+
+        // Standing doubling cube in the left home corner. Its top is a real
+        // texture, not UI text, so it catches the same light as the board.
+        doublingCubeModel = createDoublingCubeModel(0.58f, attrs);
+        doublingCubeInstance = new ModelInstance(
+                doublingCubeModel, -5.15f, 0.54f, -3.18f);
+        models.add(doublingCubeInstance);
 
         // Right-side borne-off storage: two routed felt wells split by a brass
         // spine — bottom well for White, top well for Black. The wells stay
@@ -1481,6 +1732,126 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         // Decorative hardware omitted from the gameplay surface.
 
         rebuildGameObjects();
+    }
+
+    private Material pointGoldMaterial() {
+        Material m = new Material(
+                ColorAttribute.createDiffuse(0.72f, 0.55f, 0.24f, 1f),
+                ColorAttribute.createSpecular(0.88f, 0.68f, 0.30f, 1f),
+                FloatAttribute.createShininess(96f));
+        applyStudioReflection(m, 0.18f, 0.12f, 0.045f);
+        return m;
+    }
+
+    private void addPointRailInstances(float x, float z, boolean top) {
+        // The same symmetric rail is used on both halves; top is kept in the
+        // signature to make the two board orientations explicit at the callsite.
+        ModelInstance rail = new ModelInstance(pointRailModel, x, 0.174f, z);
+        models.add(rail);
+
+        float side = 0.382f;
+        ModelInstance leftGold = new ModelInstance(pointGoldRailModel, x - side, 0.190f, z);
+        ModelInstance rightGold = new ModelInstance(pointGoldRailModel, x + side, 0.190f, z);
+        models.add(leftGold);
+        models.add(rightGold);
+
+        ModelInstance nearGold = new ModelInstance(pointGoldEndModel, x, 0.190f, z - 1.515f);
+        ModelInstance farGold = new ModelInstance(pointGoldEndModel, x, 0.190f, z + 1.515f);
+        models.add(nearGold);
+        models.add(farGold);
+    }
+
+    private Material dieFaceMaterial(int face) {
+        Material m = new Material(
+                TextureAttribute.createDiffuse(dieFaceTextures[face - 1]),
+                ColorAttribute.createSpecular(0.42f, 0.36f, 0.26f, 1f),
+                FloatAttribute.createShininess(76f));
+        applyStudioReflection(m, 0.10f, 0.075f, 0.045f);
+        return m;
+    }
+
+    private Model createPippedDieModel(float size, long attrs) {
+        float s = size * 0.5f;
+        mb.begin();
+
+        // Opposite pairs follow a normal die: 1/6, 2/5, 3/4. The local +Y
+        // face starts at one, and setDieFace rotates the desired value upward.
+        addCubeFace(mb.part("die_top", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(1)),
+                new Vector3(-s, s, -s), new Vector3(-s, s, s),
+                new Vector3(s, s, s), new Vector3(s, s, -s), Vector3.Y);
+        addCubeFace(mb.part("die_bottom", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(6)),
+                new Vector3(-s, -s, -s), new Vector3(s, -s, -s),
+                new Vector3(s, -s, s), new Vector3(-s, -s, s), Vector3.Y.cpy().scl(-1f));
+        addCubeFace(mb.part("die_front", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(2)),
+                new Vector3(-s, -s, s), new Vector3(s, -s, s),
+                new Vector3(s, s, s), new Vector3(-s, s, s), Vector3.Z);
+        addCubeFace(mb.part("die_back", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(5)),
+                new Vector3(-s, -s, -s), new Vector3(-s, s, -s),
+                new Vector3(s, s, -s), new Vector3(s, -s, -s), Vector3.Z.cpy().scl(-1f));
+        addCubeFace(mb.part("die_right", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(3)),
+                new Vector3(s, -s, -s), new Vector3(s, s, -s),
+                new Vector3(s, s, s), new Vector3(s, -s, s), Vector3.X);
+        addCubeFace(mb.part("die_left", GL20.GL_TRIANGLES, attrs, dieFaceMaterial(4)),
+                new Vector3(-s, -s, s), new Vector3(-s, s, s),
+                new Vector3(-s, s, -s), new Vector3(-s, -s, -s), Vector3.X.cpy().scl(-1f));
+        return mb.end();
+    }
+
+    private Model createDoublingCubeModel(float size, long attrs) {
+        float s = size * 0.5f;
+        Material side = new Material(
+                ColorAttribute.createDiffuse(0.28f, 0.045f, 0.065f, 1f),
+                ColorAttribute.createSpecular(0.60f, 0.22f, 0.18f, 1f),
+                FloatAttribute.createShininess(104f));
+        applyStudioReflection(side, 0.15f, 0.035f, 0.035f);
+        doublingCubeTopMaterial = new Material(
+                TextureAttribute.createDiffuse(doublingCubeTexture),
+                ColorAttribute.createSpecular(0.68f, 0.46f, 0.25f, 1f),
+                FloatAttribute.createShininess(96f));
+        applyStudioReflection(doublingCubeTopMaterial, 0.12f, 0.05f, 0.03f);
+
+        mb.begin();
+        addCubeFace(mb.part("cube_top", GL20.GL_TRIANGLES, attrs, doublingCubeTopMaterial),
+                new Vector3(-s, s, -s), new Vector3(-s, s, s),
+                new Vector3(s, s, s), new Vector3(s, s, -s), Vector3.Y);
+        addCubeFace(mb.part("cube_bottom", GL20.GL_TRIANGLES, attrs, side),
+                new Vector3(-s, -s, -s), new Vector3(s, -s, -s),
+                new Vector3(s, -s, s), new Vector3(-s, -s, s), Vector3.Y.cpy().scl(-1f));
+        addCubeFace(mb.part("cube_front", GL20.GL_TRIANGLES, attrs, side),
+                new Vector3(-s, -s, s), new Vector3(s, -s, s),
+                new Vector3(s, s, s), new Vector3(-s, s, s), Vector3.Z);
+        addCubeFace(mb.part("cube_back", GL20.GL_TRIANGLES, attrs, side),
+                new Vector3(-s, -s, -s), new Vector3(-s, s, -s),
+                new Vector3(s, s, -s), new Vector3(s, -s, -s), Vector3.Z.cpy().scl(-1f));
+        addCubeFace(mb.part("cube_right", GL20.GL_TRIANGLES, attrs, side),
+                new Vector3(s, -s, -s), new Vector3(s, s, -s),
+                new Vector3(s, s, s), new Vector3(s, -s, s), Vector3.X);
+        addCubeFace(mb.part("cube_left", GL20.GL_TRIANGLES, attrs, side),
+                new Vector3(-s, -s, s), new Vector3(-s, s, s),
+                new Vector3(-s, s, -s), new Vector3(-s, -s, -s), Vector3.X.cpy().scl(-1f));
+        return mb.end();
+    }
+
+    private void addCubeFace(MeshPartBuilder part, Vector3 v00, Vector3 v01,
+                             Vector3 v11, Vector3 v10, Vector3 normal) {
+        VertexInfo a = new VertexInfo().set(v00, normal, null, new Vector2(0f, 0f));
+        VertexInfo b = new VertexInfo().set(v01, normal, null, new Vector2(0f, 1f));
+        VertexInfo c = new VertexInfo().set(v11, normal, null, new Vector2(1f, 1f));
+        VertexInfo d = new VertexInfo().set(v10, normal, null, new Vector2(1f, 0f));
+        part.triangle(a, b, c);
+        part.triangle(a, c, d);
+    }
+
+    private void setDieFace(ModelInstance die, int face) {
+        if (die == null) return;
+        int value = MathUtils.clamp(face, 1, 6);
+        // The model starts with one on +Y. These rotations move the requested
+        // numbered face to +Y while keeping the cube perfectly upright.
+        if (value == 6) die.transform.rotate(Vector3.X, 180f);
+        else if (value == 2) die.transform.rotate(Vector3.X, -90f);
+        else if (value == 5) die.transform.rotate(Vector3.X, 90f);
+        else if (value == 3) die.transform.rotate(Vector3.Z, 90f);
+        else if (value == 4) die.transform.rotate(Vector3.Z, -90f);
     }
 
     private void triQuad(MeshPartBuilder p, Vector3 a, Vector3 b, Vector3 c, Vector3 d) {
@@ -1766,29 +2137,6 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         }
     }
 
-    private void addTopPips(float x, float y, float z, int number) {
-        float d = 0.17f;
-        if (number == 1 || number == 3 || number == 5) addPip(x, y, z);
-        if (number >= 2) {
-            addPip(x - d, y, z - d);
-            addPip(x + d, y, z + d);
-        }
-        if (number >= 4) {
-            addPip(x - d, y, z + d);
-            addPip(x + d, y, z - d);
-        }
-        if (number == 6) {
-            addPip(x - d, y, z);
-            addPip(x + d, y, z);
-        }
-    }
-
-    private void addPip(float x, float y, float z) {
-        ModelInstance pip = new ModelInstance(dieDotModel, x, y, z);
-        gameObjects.add(pip);
-        models.add(pip);
-    }
-
     private void updateCamera() {
         float az = MathUtils.degreesToRadians * cameraAzimuth;
         float el = MathUtils.degreesToRadians * cameraElevation;
@@ -2054,8 +2402,12 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         if (lightCheckerNormalTexture != null) lightCheckerNormalTexture.dispose();
         if (darkCheckerTexture != null) darkCheckerTexture.dispose();
         if (darkCheckerNormalTexture != null) darkCheckerNormalTexture.dispose();
-        if (diceTexture != null) diceTexture.dispose();
-        if (diceNormalTexture != null) diceNormalTexture.dispose();
+        if (damaskTexture != null) damaskTexture.dispose();
+        if (checkerShadowTexture != null) checkerShadowTexture.dispose();
+        for (Texture faceTexture : dieFaceTextures) {
+            if (faceTexture != null) faceTexture.dispose();
+        }
+        if (doublingCubeTexture != null) doublingCubeTexture.dispose();
         if (studioCubemap != null) studioCubemap.dispose();
         batch.dispose();
         uiShape.dispose();
@@ -2072,8 +2424,11 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         if (darkChecker != null) darkChecker.dispose();
         if (lightChecker != null) lightChecker.dispose();
         if (diceModel != null) diceModel.dispose();
-        if (dieDotModel != null) dieDotModel.dispose();
         if (checkerShadowModel != null) checkerShadowModel.dispose();
+        if (pointRailModel != null) pointRailModel.dispose();
+        if (pointGoldRailModel != null) pointGoldRailModel.dispose();
+        if (pointGoldEndModel != null) pointGoldEndModel.dispose();
+        if (doublingCubeModel != null) doublingCubeModel.dispose();
         if (accentModel != null) accentModel.dispose();
         if (diceTrayModel != null) diceTrayModel.dispose();
         if (diceEdgeModel != null) diceEdgeModel.dispose();
