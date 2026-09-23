@@ -19,7 +19,8 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 /**
  * Backgammon Pro 3D - polished board prototype.
  *
- * The board uses a real photographic walnut veneer texture for the furniture surfaces.
+ * Styled after a leather travel case: saddle-brown leather shell, gray baize
+ * playfield, chocolate/ivory points and polished brass hardware.
  * Geometry remains reusable to keep draw calls and mobile GPU memory under control.
  */
 public final class BoardScreen extends ScreenAdapter implements InputProcessor {
@@ -125,9 +126,9 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         woodGrainTexture.setWrap(
                 Texture.TextureWrap.Repeat,
                 Texture.TextureWrap.Repeat);
-        // Premium palette: warm aged ivory, deep oxblood resin, natural bone.
+        // Premium palette: aged ivory, dark chocolate lacquer, natural bone.
         lightCheckerTexture = createPieceTexture(256, 0.90f, 0.84f, 0.72f, 1.00f, 0.97f, 0.88f, 101L);
-        darkCheckerTexture = createPieceTexture(256, 0.16f, 0.026f, 0.032f, 0.48f, 0.085f, 0.075f, 202L);
+        darkCheckerTexture = createPieceTexture(256, 0.13f, 0.06f, 0.03f, 0.42f, 0.23f, 0.11f, 202L);
         diceTexture = createPieceTexture(256, 0.91f, 0.82f, 0.67f, 0.99f, 0.91f, 0.76f, 303L);
         woodNormalTexture = createNormalTexture(256, 11f, 0.55f, 404L);
         lightCheckerNormalTexture = createNormalTexture(256, 5f, 0.34f, 505L);
@@ -609,25 +610,25 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     }
 
     private void addBorneOffCheckers(Model model, int count, boolean light) {
-        // Keep borne-off pieces physically outside the playing surface and laid
-        // flat in the single right-side storage tray. Three columns x five rows
-        // avoids the unstable tall stacks discouraged by tournament guidance.
+        // Borne-off checkers stack in five low piles of three inside their own
+        // zone of the right-side storage: bottom zone for White, top for Black.
         int capped = Math.min(15, Math.max(0, count));
+        float zoneCenterZ = light ? -1.92f : 1.92f;
         for (int i = 0; i < capped; i++) {
-            int column = i % 3;
-            int row = i / 3;
-            float x = 7.02f + (column - 1) * 0.16f;
-            float z = light
-                    ? -2.95f + row * 0.72f
-                    :  2.95f - row * 0.72f;
+            int pile = i / 3;
+            int level = i % 3;
+            float x = 7.02f;
+            float z = zoneCenterZ + (pile - 2) * 0.62f;
 
-            ModelInstance shadow = new ModelInstance(
-                    checkerShadowModel, x, 0.229f, z);
-            shadow.transform.scl(0.72f, 1f, 0.72f);
-            gameObjects.add(shadow);
-            models.add(shadow);
+            if (level == 0) {
+                ModelInstance shadow = new ModelInstance(
+                        checkerShadowModel, x, 0.229f, z);
+                shadow.transform.scl(0.72f, 1f, 0.72f);
+                gameObjects.add(shadow);
+                models.add(shadow);
+            }
 
-            ModelInstance piece = new ModelInstance(model, x, 0.322f, z);
+            ModelInstance piece = new ModelInstance(model, x, 0.322f + level * 0.169f, z);
             piece.transform.scl(0.62f, 0.72f, 0.62f);
             gameObjects.add(piece);
             models.add(piece);
@@ -1027,16 +1028,29 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         return m;
     }
 
-    private Material mahoganyMaterial(float r, float g, float b) {
-        return material(woodGrainTexture, woodNormalTexture, r, g, b, 0.42f, 0.27f, 0.20f, 44f);
+    private Material feltPlayfieldMaterial() {
+        // Gray baize playfield like a leather travel case: matte, with a
+        // whisper of procedural grain so it never reads as flat paint.
+        return material(null, lightCheckerNormalTexture,
+                0.44f, 0.44f, 0.46f,
+                0.10f, 0.10f, 0.11f, 9f);
     }
 
-    private Material playingWoodMaterial() {
-        // Finished walnut playfield: brighter warm tint with a lively
-        // varnished highlight so the surface reads clearly under mobile light.
-        return material(woodGrainTexture, woodNormalTexture,
-                0.94f, 0.66f, 0.41f,
-                0.70f, 0.47f, 0.30f, 72f);
+    /** Smooth saddle-brown leather with a soft sheen (no wood grain). */
+    private Material leatherMaterial(float r, float g, float b, float shine) {
+        Material m = new Material(ColorAttribute.createDiffuse(r, g, b, 1f));
+        m.set(ColorAttribute.createSpecular(
+                r * 0.55f + 0.10f, g * 0.55f + 0.08f, b * 0.55f + 0.05f, 1f));
+        m.set(FloatAttribute.createShininess(shine));
+        return m;
+    }
+
+    /** Polished brass hardware: clasps, corner caps and trim. */
+    private Material brassMaterial() {
+        Material m = new Material(ColorAttribute.createDiffuse(0.72f, 0.50f, 0.20f, 1f));
+        m.set(ColorAttribute.createSpecular(0.95f, 0.75f, 0.42f, 1f));
+        m.set(FloatAttribute.createShininess(110f));
+        return m;
     }
 
     private Material glossyDarkResinMaterial() {
@@ -1166,59 +1180,54 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                 surface(0.018f, 0.022f, 0.028f), attrs);
         models.add(new ModelInstance(floorModel, 0f, -0.84f, 0f));
 
-        Material hudWood = woodTextured(0.46f, 0.24f, 0.13f, 64f);
+        Material hudWood = leatherMaterial(0.45f, 0.27f, 0.14f, 48f);
         hudHeaderModel = mb.createBox(13.0f, 0.30f, 0.78f, hudWood, attrs);
         hudHeaderInsetModel = mb.createBox(11.9f, 0.07f, 0.58f,
-                mahoganyMaterial(0.19f, 0.050f, 0.020f), attrs);
+                wood(0.20f, 0.11f, 0.05f, 30f), attrs);
         hudTurnModel = mb.createBox(3.15f, 0.10f, 0.54f,
-                wood(0.62f, 0.34f, 0.12f, 72f), attrs);
+                brassMaterial(), attrs);
         models.add(new ModelInstance(hudHeaderModel, 0f, 0.62f, -4.72f));
         models.add(new ModelInstance(hudHeaderInsetModel, 0f, 0.79f, -4.72f));
         models.add(new ModelInstance(hudTurnModel, 0f, 0.85f, -4.72f));
 
-        // Layered wooden frame: the cabinet body sits on the floor with its top
-        // exactly flush with the playfield bottom, so the playfield reads as a
-        // routed recess instead of a floating panel.
+        // Leather travel-case body: the cabinet sits on the floor with its top
+        // exactly flush with the playfield bottom, so the felt reads as an
+        // inset panel instead of a floating sheet.
         baseModel = mb.createBox(
                 14.8f, 0.78f, 8.6f,
-                material(woodGrainTexture, woodNormalTexture,
-                        0.62f, 0.36f, 0.23f,
-                        0.55f, 0.35f, 0.22f, 58f), attrs);
+                leatherMaterial(0.45f, 0.27f, 0.14f, 42f), attrs);
         models.add(new ModelInstance(baseModel, 0f, -0.37f, 0f));
 
-        // Stepped furniture plinth under the cabinet for a carved-wood base.
+        // Stepped base under the cabinet for a chunky case silhouette.
         Model plinthModel = mb.createBox(
                 15.05f, 0.16f, 8.85f,
-                material(woodGrainTexture, woodNormalTexture,
-                        0.42f, 0.22f, 0.13f,
-                        0.40f, 0.25f, 0.16f, 46f), attrs);
+                leatherMaterial(0.28f, 0.16f, 0.08f, 34f), attrs);
         models.add(new ModelInstance(plinthModel, 0f, -0.72f, 0f));
 
-        // Single clean playfield: one solid top surface avoids layered
+        // Single clean felt playfield: one solid top surface avoids layered
         // coplanar/intersecting panels that can create mobile depth artifacts.
         playingSurfaceModel = mb.createBox(
                 12.55f, 0.16f, 7.45f,
-                playingWoodMaterial(), attrs);
+                feltPlayfieldMaterial(), attrs);
         models.add(new ModelInstance(playingSurfaceModel, 0f, 0.10f, 0f));
 
         // No overlay rail over the playfield. Keeping the playing surface as
         // one visible mesh prevents the repeated-line artifact seen on mobile.
 
-        // Deep carved perimeter frame: tall rails seated on the cabinet, an
-        // overhanging crown cap, a recessed inner bead and solid corner posts.
-        // The playfield sits well below the cap top like a hand-routed case.
-        Material frameRail = woodTextured(0.60f, 0.36f, 0.22f, 52f);
-        Material frameCap = woodTextured(0.66f, 0.41f, 0.25f, 60f);
-        Material frameBead = mahoganyMaterial(0.30f, 0.115f, 0.040f);
-        Material frameGroove = wood(0.16f, 0.045f, 0.015f, 26f);
+        // Low leather rails with brass corner caps, like a travel case: roughly
+        // half the previous height so stacked checkers rise above the walls.
+        Material frameRail = leatherMaterial(0.48f, 0.29f, 0.15f, 44f);
+        Material frameCap = leatherMaterial(0.54f, 0.33f, 0.17f, 52f);
+        Material frameBead = wood(0.22f, 0.12f, 0.05f, 30f);
+        Material frameGroove = wood(0.15f, 0.08f, 0.03f, 24f);
         Model railLong = mb.createBox(
-                13.55f, 1.30f, 0.44f, frameRail, attrs);
+                13.55f, 0.66f, 0.44f, frameRail, attrs);
         Model railShort = mb.createBox(
-                0.44f, 1.30f, 7.48f, frameRail, attrs);
-        models.add(new ModelInstance(railLong, 0f, 0.67f, -4.00f));
-        models.add(new ModelInstance(railLong, 0f, 0.67f,  4.00f));
-        models.add(new ModelInstance(railShort, -6.50f, 0.67f, 0f));
-        models.add(new ModelInstance(railShort,  6.50f, 0.67f, 0f));
+                0.44f, 0.66f, 7.48f, frameRail, attrs);
+        models.add(new ModelInstance(railLong, 0f, 0.35f, -4.00f));
+        models.add(new ModelInstance(railLong, 0f, 0.35f,  4.00f));
+        models.add(new ModelInstance(railShort, -6.50f, 0.35f, 0f));
+        models.add(new ModelInstance(railShort,  6.50f, 0.35f, 0f));
 
         // Dark shadow groove where the rails meet the cabinet: sells the depth.
         Model grooveLong = mb.createBox(13.55f, 0.07f, 0.50f, frameGroove, attrs);
@@ -1228,89 +1237,88 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         models.add(new ModelInstance(grooveShort, -6.50f, 0.055f, 0f));
         models.add(new ModelInstance(grooveShort,  6.50f, 0.055f, 0f));
 
-        // Overhanging crown cap on top of every rail (the carved lip).
-        Model capLong = mb.createBox(13.85f, 0.15f, 0.66f, frameCap, attrs);
-        Model capShort = mb.createBox(0.66f, 0.15f, 7.78f, frameCap, attrs);
-        models.add(new ModelInstance(capLong, 0f, 1.395f, -4.00f));
-        models.add(new ModelInstance(capLong, 0f, 1.395f,  4.00f));
-        models.add(new ModelInstance(capShort, -6.50f, 1.395f, 0f));
-        models.add(new ModelInstance(capShort,  6.50f, 1.395f, 0f));
+        // Overhanging cap on top of every rail (the stitched leather lip).
+        Model capLong = mb.createBox(13.85f, 0.12f, 0.66f, frameCap, attrs);
+        Model capShort = mb.createBox(0.66f, 0.12f, 7.78f, frameCap, attrs);
+        models.add(new ModelInstance(capLong, 0f, 0.74f, -4.00f));
+        models.add(new ModelInstance(capLong, 0f, 0.74f,  4.00f));
+        models.add(new ModelInstance(capShort, -6.50f, 0.74f, 0f));
+        models.add(new ModelInstance(capShort,  6.50f, 0.74f, 0f));
 
         // Thin polished inner bead running along the inside faces.
-        Model beadLong = mb.createBox(13.10f, 0.075f, 0.055f, frameBead, attrs);
-        Model beadShort = mb.createBox(0.055f, 0.075f, 7.10f, frameBead, attrs);
-        models.add(new ModelInstance(beadLong, 0f, 0.92f, -3.755f));
-        models.add(new ModelInstance(beadLong, 0f, 0.92f,  3.755f));
-        models.add(new ModelInstance(beadShort, -6.255f, 0.92f, 0f));
-        models.add(new ModelInstance(beadShort,  6.255f, 0.92f, 0f));
+        Model beadLong = mb.createBox(13.10f, 0.07f, 0.055f, frameBead, attrs);
+        Model beadShort = mb.createBox(0.055f, 0.07f, 7.10f, frameBead, attrs);
+        models.add(new ModelInstance(beadLong, 0f, 0.44f, -3.755f));
+        models.add(new ModelInstance(beadLong, 0f, 0.44f,  3.755f));
+        models.add(new ModelInstance(beadShort, -6.255f, 0.44f, 0f));
+        models.add(new ModelInstance(beadShort,  6.255f, 0.44f, 0f));
 
-        // Solid corner posts with a slightly proud top: classic joinery.
-        Model cornerPost = mb.createBox(0.60f, 1.52f, 0.60f, frameCap, attrs);
-        Model cornerCap = mb.createBox(0.70f, 0.10f, 0.70f, frameBead, attrs);
-        models.add(new ModelInstance(cornerPost, -6.50f, 0.78f, -4.00f));
-        models.add(new ModelInstance(cornerPost,  6.50f, 0.78f, -4.00f));
-        models.add(new ModelInstance(cornerPost, -6.50f, 0.78f,  4.00f));
-        models.add(new ModelInstance(cornerPost,  6.50f, 0.78f,  4.00f));
-        models.add(new ModelInstance(cornerCap, -6.50f, 1.59f, -4.00f));
-        models.add(new ModelInstance(cornerCap,  6.50f, 1.59f, -4.00f));
-        models.add(new ModelInstance(cornerCap, -6.50f, 1.59f,  4.00f));
-        models.add(new ModelInstance(cornerCap,  6.50f, 1.59f,  4.00f));
+        // Solid corner posts with polished brass caps: the case hardware.
+        Model cornerPost = mb.createBox(0.60f, 0.74f, 0.60f, frameCap, attrs);
+        Model cornerCap = mb.createBox(0.70f, 0.09f, 0.70f, brassMaterial(), attrs);
+        models.add(new ModelInstance(cornerPost, -6.50f, 0.39f, -4.00f));
+        models.add(new ModelInstance(cornerPost,  6.50f, 0.39f, -4.00f));
+        models.add(new ModelInstance(cornerPost, -6.50f, 0.39f,  4.00f));
+        models.add(new ModelInstance(cornerPost,  6.50f, 0.39f,  4.00f));
+        models.add(new ModelInstance(cornerCap, -6.50f, 0.805f, -4.00f));
+        models.add(new ModelInstance(cornerCap,  6.50f, 0.805f, -4.00f));
+        models.add(new ModelInstance(cornerCap, -6.50f, 0.805f,  4.00f));
+        models.add(new ModelInstance(cornerCap,  6.50f, 0.805f,  4.00f));
 
         // Subtle central divider shoulders, keeping the bar visually integrated.
         Model barShoulder = mb.createBox(
                 0.92f, 0.10f, 7.42f,
-                wood(0.22f, 0.060f, 0.016f, 30f), attrs);
+                wood(0.20f, 0.10f, 0.045f, 26f), attrs);
         models.add(new ModelInstance(barShoulder, 0f, 0.28f, 0f));
 
         // Central bar with a subtle raised center strip.
         barModel = mb.createBox(
                 0.84f, 0.30f, 7.34f,
-                wood(0.20f, 0.055f, 0.025f, 34f), attrs);
+                leatherMaterial(0.25f, 0.14f, 0.06f, 34f), attrs);
         models.add(new ModelInstance(barModel, 0f, 0.27f, 0f));
 
         Model barHighlight = mb.createBox(
                 0.12f, 0.045f, 7.10f,
-                wood(0.58f, 0.22f, 0.050f, 40f), attrs);
+                brassMaterial(), attrs);
         models.add(new ModelInstance(barHighlight, 0f, 0.43f, 0f));
 
-        Material barCapMaterial = wood(0.34f, 0.11f, 0.022f, 46f);
+        Material barCapMaterial = wood(0.30f, 0.16f, 0.06f, 40f);
         Model barCap = mb.createBox(0.24f, 0.035f, 6.95f, barCapMaterial, attrs);
         models.add(new ModelInstance(barCap, 0f, 0.47f, 0f));
 
-        // Classic flat points: no wood texture is applied to these meshes.
-        // Lacquered resin-style point inlays: a deep burgundy and warm ivory
-        // with controlled specular response so the raised faces catch the light
-        // like finished furniture rather than flat 2D paint.
+        // Stitched leather points on gray baize: chocolate brown and ivory,
+        // with controlled specular response so the raised faces catch the
+        // light like applique work rather than flat 2D paint.
         darkPointModel = createPointModel(
                 new Material(
-                        ColorAttribute.createDiffuse(0.27f, 0.055f, 0.075f, 1f),
-                        ColorAttribute.createSpecular(0.48f, 0.25f, 0.22f, 1f),
-                        FloatAttribute.createShininess(58f)),
+                        ColorAttribute.createDiffuse(0.44f, 0.27f, 0.14f, 1f),
+                        ColorAttribute.createSpecular(0.38f, 0.24f, 0.13f, 1f),
+                        FloatAttribute.createShininess(42f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.12f, 0.022f, 0.030f, 1f),
-                        ColorAttribute.createSpecular(0.62f, 0.34f, 0.28f, 1f),
-                        FloatAttribute.createShininess(78f)), attrs);
+                        ColorAttribute.createDiffuse(0.30f, 0.17f, 0.08f, 1f),
+                        ColorAttribute.createSpecular(0.48f, 0.30f, 0.15f, 1f),
+                        FloatAttribute.createShininess(58f)), attrs);
         lightPointModel = createPointModel(
                 new Material(
-                        ColorAttribute.createDiffuse(0.86f, 0.72f, 0.49f, 1f),
-                        ColorAttribute.createSpecular(0.52f, 0.42f, 0.28f, 1f),
-                        FloatAttribute.createShininess(62f)),
+                        ColorAttribute.createDiffuse(0.89f, 0.84f, 0.72f, 1f),
+                        ColorAttribute.createSpecular(0.45f, 0.40f, 0.30f, 1f),
+                        FloatAttribute.createShininess(46f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.67f, 0.48f, 0.27f, 1f),
-                        ColorAttribute.createSpecular(0.70f, 0.52f, 0.30f, 1f),
-                        FloatAttribute.createShininess(82f)), attrs);
+                        ColorAttribute.createDiffuse(0.78f, 0.70f, 0.55f, 1f),
+                        ColorAttribute.createSpecular(0.60f, 0.52f, 0.36f, 1f),
+                        FloatAttribute.createShininess(64f)), attrs);
 
-        // Thin dark routed bed beneath every point. It is deliberately larger than
+        // Thin dark bed beneath every point. It is deliberately larger than
         // the inlay and only a fraction of the height, creating a natural
         // recessed/AO edge instead of a flat painted triangle.
         pointShadowModel = createPointModel(
                 new Material(
-                        ColorAttribute.createDiffuse(0.055f, 0.018f, 0.010f, 1f),
-                        ColorAttribute.createSpecular(0.12f, 0.055f, 0.025f, 1f),
+                        ColorAttribute.createDiffuse(0.050f, 0.050f, 0.055f, 1f),
+                        ColorAttribute.createSpecular(0.10f, 0.10f, 0.10f, 1f),
                         FloatAttribute.createShininess(24f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.030f, 0.010f, 0.006f, 1f),
-                        ColorAttribute.createSpecular(0.08f, 0.035f, 0.018f, 1f),
+                        ColorAttribute.createDiffuse(0.028f, 0.028f, 0.030f, 1f),
+                        ColorAttribute.createSpecular(0.07f, 0.07f, 0.07f, 1f),
                         FloatAttribute.createShininess(18f)), attrs);
 
         for (int i = 0; i < 12; i++) {
@@ -1339,19 +1347,21 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
         // Shared checker meshes. High radial resolution keeps the circular
         // silhouette clean on modern phone displays while remaining lightweight.
+        // Dark: glossy chocolate lacquer with a cream inlaid ring (like the
+        // store-bought sets). Light: polished ivory with a tan inlaid ring.
         darkChecker = createBeveledCheckerModel(darkCheckerTexture,
                 new Material(
-                        ColorAttribute.createDiffuse(0.075f, 0.012f, 0.018f, 1f),
-                        ColorAttribute.createSpecular(0.88f, 0.34f, 0.30f, 1f),
-                        FloatAttribute.createShininess(138f)),
+                        ColorAttribute.createDiffuse(0.11f, 0.055f, 0.030f, 1f),
+                        ColorAttribute.createSpecular(0.85f, 0.42f, 0.25f, 1f),
+                        FloatAttribute.createShininess(150f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.28f, 0.022f, 0.030f, 1f),
-                        ColorAttribute.createSpecular(0.96f, 0.48f, 0.42f, 1f),
-                        FloatAttribute.createShininess(152f)),
+                        ColorAttribute.createDiffuse(0.84f, 0.74f, 0.56f, 1f),
+                        ColorAttribute.createSpecular(0.75f, 0.65f, 0.48f, 1f),
+                        FloatAttribute.createShininess(130f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.52f, 0.045f, 0.055f, 1f),
-                        ColorAttribute.createSpecular(1.0f, 0.58f, 0.50f, 1f),
-                        FloatAttribute.createShininess(166f)),
+                        ColorAttribute.createDiffuse(0.15f, 0.075f, 0.038f, 1f),
+                        ColorAttribute.createSpecular(0.95f, 0.55f, 0.32f, 1f),
+                        FloatAttribute.createShininess(165f)),
                 attrs);
 
         lightChecker = createBeveledCheckerModel(lightCheckerTexture,
@@ -1360,22 +1370,24 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                         ColorAttribute.createSpecular(0.86f, 0.74f, 0.52f, 1f),
                         FloatAttribute.createShininess(118f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.98f, 0.91f, 0.73f, 1f),
-                        ColorAttribute.createSpecular(0.98f, 0.86f, 0.62f, 1f),
-                        FloatAttribute.createShininess(134f)),
+                        ColorAttribute.createDiffuse(0.70f, 0.54f, 0.33f, 1f),
+                        ColorAttribute.createSpecular(0.78f, 0.62f, 0.40f, 1f),
+                        FloatAttribute.createShininess(130f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.68f, 0.47f, 0.25f, 1f),
-                        ColorAttribute.createSpecular(0.72f, 0.54f, 0.32f, 1f),
-                        FloatAttribute.createShininess(104f)),
+                        ColorAttribute.createDiffuse(0.90f, 0.83f, 0.68f, 1f),
+                        ColorAttribute.createSpecular(0.85f, 0.76f, 0.58f, 1f),
+                        FloatAttribute.createShininess(120f)),
                 attrs);
 
         diceModel = createBeveledDieModel(diceTexture, attrs);
+        // Bold near-black recessed-style pips on the ivory die, like real
+        // drilled bone dice.
         dieDotModel = mb.createCylinder(
-                0.071f, 0.012f, 0.071f, 32,
+                0.082f, 0.012f, 0.082f, 32,
                 new Material(
-                        ColorAttribute.createDiffuse(0.028f, 0.020f, 0.015f, 1f),
-                        ColorAttribute.createSpecular(0.10f, 0.075f, 0.050f, 1f),
-                        FloatAttribute.createShininess(18f)),
+                        ColorAttribute.createDiffuse(0.022f, 0.016f, 0.012f, 1f),
+                        ColorAttribute.createSpecular(0.08f, 0.06f, 0.045f, 1f),
+                        FloatAttribute.createShininess(14f)),
                 attrs);
 
         // Soft contact shadow under every checker. It is intentionally subtle:
@@ -1393,21 +1405,21 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                 0.16f, 0.035f, 0.16f, 32,
                 wood(0.78f, 0.50f, 0.17f, 52f), attrs);
 
-        // Premium dice tray: a shallow inset surround makes the dice feel
+        // Premium dice tray: a shallow felt-lined well makes the dice feel
         // physically seated on the board instead of floating above it.
         diceTrayModel = mb.createBox(
                 2.55f, 0.07f, 1.55f,
-                mahoganyMaterial(0.20f, 0.065f, 0.028f), attrs);
+                leatherMaterial(0.24f, 0.13f, 0.06f, 36f), attrs);
         models.add(new ModelInstance(diceTrayModel, 0f, 0.48f, 0f));
 
         Model diceTrayInset = mb.createBox(
                 2.30f, 0.055f, 1.25f,
-                surface(0.18f, 0.055f, 0.025f), attrs);
+                surface(0.30f, 0.30f, 0.32f), attrs);
         models.add(new ModelInstance(diceTrayInset, 0f, 0.54f, 0f));
 
         // Raised brass trim around the dice well gives the center a crafted,
-        // furniture-like finish while keeping the dice area visually clean.
-        Material trayTrim = mahoganyMaterial(0.68f, 0.30f, 0.075f);
+        // case-like finish while keeping the dice area visually clean.
+        Material trayTrim = brassMaterial();
         Model trayTrimX = mb.createBox(2.38f, 0.045f, 0.06f, trayTrim, attrs);
         Model trayTrimZ = mb.createBox(0.06f, 0.045f, 1.25f, trayTrim, attrs);
         models.add(new ModelInstance(trayTrimX, 0f, 0.54f, -0.64f));
@@ -1415,20 +1427,29 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         models.add(new ModelInstance(trayTrimZ, -1.19f, 0.54f, 0f));
         models.add(new ModelInstance(trayTrimZ,  1.19f, 0.54f, 0f));
 
-        // Deep side storage wells inspired by a real wooden backgammon case.
-        // They remain part of the board shell, so the playfield keeps its clean silhouette.
+        // Right-side borne-off storage: two routed felt wells split by a brass
+        // spine — bottom well for White, top well for Black. The wells stay
+        // part of the board shell so the playfield keeps its clean silhouette.
         sideTrayModel = mb.createBox(
                 0.72f, 0.16f, 7.70f,
-                woodTextured(0.38f, 0.31f, 0.25f, 28f), attrs);
+                leatherMaterial(0.26f, 0.15f, 0.07f, 32f), attrs);
         sideTrayInsetModel = mb.createBox(
-                0.50f, 0.07f, 7.25f,
-                surface(0.055f, 0.018f, 0.010f), attrs);
-        // Only the right-side well is used for borne-off checkers.
+                0.56f, 0.07f, 3.60f,
+                surface(0.10f, 0.10f, 0.11f), attrs);
         models.add(new ModelInstance(sideTrayModel,  7.02f, 0.10f, 0f));
-        models.add(new ModelInstance(sideTrayInsetModel,  7.02f, 0.19f, 0f));
+        models.add(new ModelInstance(sideTrayInsetModel,  7.02f, 0.19f, -1.92f));
+        models.add(new ModelInstance(sideTrayInsetModel,  7.02f, 0.19f,  1.92f));
 
-        // Thin walnut lips make the wells read as routed recesses.
-        Material trayLip = woodTextured(0.48f, 0.39f, 0.31f, 42f);
+        // Brass spine dividing the White (bottom) and Black (top) wells.
+        Model offDivider = mb.createBox(0.72f, 0.16f, 0.24f,
+                leatherMaterial(0.26f, 0.15f, 0.07f, 32f), attrs);
+        models.add(new ModelInstance(offDivider, 7.02f, 0.10f, 0f));
+        Model offDividerBrass = mb.createBox(0.60f, 0.04f, 0.20f,
+                brassMaterial(), attrs);
+        models.add(new ModelInstance(offDividerBrass, 7.02f, 0.20f, 0f));
+
+        // Thin leather lips make the wells read as routed recesses.
+        Material trayLip = leatherMaterial(0.45f, 0.27f, 0.13f, 40f);
         Model trayLipX = mb.createBox(0.06f, 0.075f, 7.42f, trayLip, attrs);
         models.add(new ModelInstance(trayLipX,  6.63f, 0.22f, 0f));
         models.add(new ModelInstance(trayLipX,  7.34f, 0.22f, 0f));
@@ -1622,6 +1643,25 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
             VertexInfo vi1 = new VertexInfo().set(in1, Vector3.Y, null, new Vector2(0.5f, 0.5f));
             ring.triangle(vo0, vi0, vo1);
             ring.triangle(vo1, vi0, vi1);
+        }
+
+        // Thin pinstripe near the rim, like the inlaid store-bought sets.
+        MeshPartBuilder pinstripe = mb.part("checker_pinstripe", GL20.GL_TRIANGLES, attrs, detailMaterial);
+        final float pinOuter = 0.352f;
+        final float pinInner = 0.338f;
+        for (int i = 0; i < segments; i++) {
+            float a0 = MathUtils.PI2 * i / segments;
+            float a1 = MathUtils.PI2 * (i + 1) / segments;
+            Vector3 o0 = new Vector3(MathUtils.cos(a0) * pinOuter, ringY, MathUtils.sin(a0) * pinOuter);
+            Vector3 o1 = new Vector3(MathUtils.cos(a1) * pinOuter, ringY, MathUtils.sin(a1) * pinOuter);
+            Vector3 in0 = new Vector3(MathUtils.cos(a0) * pinInner, ringY, MathUtils.sin(a0) * pinInner);
+            Vector3 in1 = new Vector3(MathUtils.cos(a1) * pinInner, ringY, MathUtils.sin(a1) * pinInner);
+            VertexInfo vo0 = new VertexInfo().set(o0, Vector3.Y, null, new Vector2(0.5f, 0.5f));
+            VertexInfo vo1 = new VertexInfo().set(o1, Vector3.Y, null, new Vector2(0.5f, 0.5f));
+            VertexInfo vi0 = new VertexInfo().set(in0, Vector3.Y, null, new Vector2(0.5f, 0.5f));
+            VertexInfo vi1 = new VertexInfo().set(in1, Vector3.Y, null, new Vector2(0.5f, 0.5f));
+            pinstripe.triangle(vo0, vi0, vo1);
+            pinstripe.triangle(vo1, vi0, vi1);
         }
 
         MeshPartBuilder hub = mb.part("checker_hub", GL20.GL_TRIANGLES, attrs, rimMaterial);
@@ -1924,7 +1964,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
         uiShape.setColor(0.92f, 0.85f, 0.69f, 1f);
         uiShape.circle(leftCardX + 22f, cardY + cardH * 0.56f, 8f, 24);
-        uiShape.setColor(0.52f, 0.035f, 0.045f, 1f);
+        uiShape.setColor(0.23f, 0.11f, 0.05f, 1f);
         uiShape.circle(rightCardX + 22f, cardY + cardH * 0.56f, 8f, 24);
 
         float turnW = Math.min(320f, w * 0.28f);
