@@ -3,7 +3,11 @@ on:
   push:
     branches:
       - main
+      - 'arena/**'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,10 +25,34 @@ jobs:
         with:
           gradle-version: '9.6.0'
       - name: Build debug APK
-        run: gradle :android:assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle :android:assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: backgammon-pro-3d-debug-${{ github.run_id }}
           path: android/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Commit APK and build status to branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p releases
+          echo "run_id=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > releases/build-status.txt
+          if [ -f gradle-build.log ]; then
+            tail -c 20000 gradle-build.log > releases/build-tail.log
+          else
+            echo "no gradle log produced" > releases/build-tail.log
+          fi
+          if ls android/build/outputs/apk/debug/*.apk >/dev/null 2>&1; then
+            cp android/build/outputs/apk/debug/*.apk releases/backgammon-pro-3d-debug.apk
+            echo "apk=present" >> releases/build-status.txt
+          else
+            echo "apk=missing" >> releases/build-status.txt
+          fi
+          git add releases/
+          git commit -m "CI results for ${{ github.sha }} [skip ci]" || echo "nothing to commit"
+          git pull --rebase origin "${{ github.ref_name }}" || true
+          git push origin "HEAD:${{ github.ref_name }}"
