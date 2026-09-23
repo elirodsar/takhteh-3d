@@ -31,16 +31,16 @@ Run with --info for a stacktrace.
 > Task :android:mergeDebugAssets
 > Task :android:parseDebugLocalResources
 > Task :android:compressDebugAssets
-> Task :android:generateDebugGlobalSynthetics
 > Task :android:generateDebugRFile
+> Task :android:generateDebugGlobalSynthetics
 > Task :android:compileDebugKotlin NO-SOURCE
-> Task :android:checkDebugDuplicateClasses
 > Task :android:compileDebugJavaWithJavac
 > Task :android:processDebugJavaRes NO-SOURCE
 > Task :android:desugarDebugFileDependencies
+> Task :android:checkDebugDuplicateClasses
+> Task :android:checkDebugAarMetadata
 > Task :android:mergeDebugJavaResource
 > Task :android:mapDebugSourceSetPaths
-> Task :android:checkDebugAarMetadata
 > Task :android:mergeLibDexDebug
 > Task :android:compileDebugNavigationResources
 > Task :android:createDebugCompatibleScreenManifests
@@ -52,8 +52,8 @@ Run with --info for a stacktrace.
 > Task :android:processDebugManifestForPackage
 > Task :android:mergeDebugNativeLibs
 > Task :android:processDebugResources
-> Task :android:stripDebugDebugSymbols
 > Task :android:mergeExtDexDebug
+> Task :android:stripDebugDebugSymbols
 > Task :android:validateSigningDebug
 > Task :android:dexBuilderDebug
 > Task :android:writeDebugAppMetadata
@@ -62,7 +62,7 @@ Run with --info for a stacktrace.
 > Task :android:packageDebug
 > Task :android:createDebugApkListingFileRedirect
 > Task :android:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1790188105959.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1790192026032.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/takhteh-3d/takhteh-3d/build/reports/problems/problems-report.html
 
@@ -72,6 +72,6 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 
 For more on this, please refer to https://docs.gradle.org/9.6.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
-BUILD SUCCESSFUL in 1m 17s
+BUILD SUCCESSFUL in 1m 14s
 39 actionable tasks: 39 executed
 Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.6.0/userguide/configuration_cache_enabling.html
