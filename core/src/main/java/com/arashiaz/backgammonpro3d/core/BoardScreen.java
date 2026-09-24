@@ -70,7 +70,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     private Model accentModel;
     private Model diceTrayModel, screwModel;
     private Model diceEdgeModel;
-    private Model pointRailModel, pointGoldRailModel, pointGoldEndModel;
+    private Model pointRailModel;
     private Model doublingCubeModel;
     private Material doublingCubeTopMaterial;
     private ModelInstance doublingCubeInstance;
@@ -108,11 +108,12 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     private boolean moveAnimating;
 
     // Shared checker-stack layout: columns sit on the wide end of the point,
-    // each disc rests exactly one thickness above the previous one so no two
-    // checkers ever intersect. Disc thickness is 2*(0.075+0.030) = 0.21.
-    private static final float STACK_Z = 3.05f;      // distance from board center
-    private static final float STACK_Y0 = 0.42f;     // first checker center (point top 0.305 + half-thickness)
-    private static final float STACK_STEP = 0.24f;   // vertical spacing between discs
+    // each disc rests on the previous one in a legal vertical stack. The
+    // fresh checker mesh is 2*(0.085+0.030) = 0.23 units thick; the step
+    // leaves a deliberate 0.025-unit separation so the rims never interpenetrate.
+    private static final float STACK_Z = 3.05f;      // wide end of each point
+    private static final float STACK_Y0 = 0.44f;     // point top .305 + clearance + half-thickness
+    private static final float STACK_STEP = 0.255f;  // vertical spacing between discs
 
     @Override
     public void show() {
@@ -121,17 +122,15 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         resetGameState();
 
         environment.set(new ColorAttribute(
-                ColorAttribute.AmbientLight, 0.34f, 0.34f, 0.36f, 1f));
-        // Controlled warm key: the baked board shading carries the broad studio
-        // falloff, while this light supplies the crisp bevel and die highlights.
+                ColorAttribute.AmbientLight, 0.29f, 0.29f, 0.31f, 1f));
+        // Lower, neutral studio lighting prevents the playfield from blowing
+        // out to cream while preserving readable ivory dice and checker rims.
         environment.add(new DirectionalLight().set(
-                1.25f, 1.15f, 0.98f, -0.52f, -1.0f, -0.28f));
-        // Cool, low fill preserves detail in the burgundy rails and dark checkers.
+                1.04f, 0.96f, 0.84f, -0.52f, -1.0f, -0.28f));
         environment.add(new DirectionalLight().set(
-                0.18f, 0.20f, 0.23f, 0.48f, -0.58f, 0.64f));
-        // A restrained warm rim separates the case from the dark floor.
+                0.14f, 0.16f, 0.19f, 0.48f, -0.58f, 0.64f));
         environment.add(new DirectionalLight().set(
-                0.08f, 0.06f, 0.04f, 0.05f, -0.35f, -0.94f));
+                0.055f, 0.045f, 0.032f, 0.05f, -0.35f, -0.94f));
 
         woodGrainTexture = new Texture(
                 Gdx.files.internal("textures/board_wood_texture.jpg"), true);
@@ -143,8 +142,8 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                 Texture.TextureWrap.Repeat);
         // Premium palette: aged ivory and dark chocolate checkers. The playfield
         // itself is a baked bronze-gray damask rather than another wood panel.
-        lightCheckerTexture = createPieceTexture(256, 0.90f, 0.84f, 0.72f, 1.00f, 0.97f, 0.88f, 101L);
-        darkCheckerTexture = createPieceTexture(256, 0.13f, 0.06f, 0.03f, 0.42f, 0.23f, 0.11f, 202L);
+        lightCheckerTexture = createPieceTexture(256, 0.76f, 0.70f, 0.59f, 0.92f, 0.87f, 0.77f, 101L);
+        darkCheckerTexture = createPieceTexture(256, 0.16f, 0.035f, 0.045f, 0.46f, 0.13f, 0.15f, 202L);
         damaskTexture = createDamaskTexture(1024, 512);
         checkerShadowTexture = createSoftShadowTexture(96);
         for (int i = 0; i < dieFaceTextures.length; i++) {
@@ -1013,7 +1012,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
     private Texture createDamaskTexture(int width, int height) {
         Pixmap artwork = new Pixmap(width, height, Pixmap.Format.RGBA8888);
         Pixmap lightmap = createLightmapPixmap(width, height);
-        final float[] baseColor = {0.66f, 0.58f, 0.45f};
+        final float[] baseColor = {0.47f, 0.44f, 0.39f};
 
         for (int y = 0; y < height; y++) {
             float v = y / (float)(height - 1);
@@ -1023,27 +1022,20 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
                 float cv = v * 3f;
                 float fu = cu - MathUtils.floor(cu);
                 float fv = cv - MathUtils.floor(cv);
-                float mu = Math.abs(fu - 0.5f) * 2f;
-                float mv = Math.abs(fv - 0.5f) * 2f;
-                float dx = mu - 0.5f;
-                float dy = mv - 0.5f;
+                float dx = fu - 0.5f;
+                float dy = fv - 0.5f;
                 float radius = (float)Math.sqrt(dx * dx + dy * dy);
                 float angle = (float)Math.atan2(dy, dx);
 
-                // Mirrored arabesque: eight petals, a small central rosette and
-                // two tendrils. It repeats as a 4 by 3 luxury-cloth lattice.
-                float petals = (float)Math.pow(Math.abs(Math.cos(angle * 4f)), 1.4);
-                float rosette = MathUtils.clamp(1f - radius * 2.05f, 0f, 1f) * petals;
-                float tendrilWave = 0.5f + 0.5f * MathUtils.sin(
-                        radius * 28f - angle * 3.0f + MathUtils.sin(angle * 2f) * 0.8f);
-                float tendrils = MathUtils.clamp(1f - Math.abs(radius - 0.27f) * 5.4f, 0f, 1f)
-                        * tendrilWave;
-                float lattice = 0.5f + 0.5f * MathUtils.sin(cu * MathUtils.PI * 2f)
-                        * MathUtils.sin(cv * MathUtils.PI * 2f);
-                float motif = MathUtils.clamp(rosette * 0.72f + tendrils * 0.46f, 0f, 1f);
-                float noise = smoothNoise(u * 9.0f + 4.3f, v * 7.0f + 1.7f);
-                float luminance = 0.73f + motif * 0.105f + lattice * 0.034f
-                        + (noise - 0.5f) * 0.024f;
+                // Quiet damask rosettes: soft radial ornament and fine noise only.
+                // No horizontal lattice/stripe function is used, which removes
+                // the repeated lines visible in the previous APK.
+                float petals = (float)Math.pow(Math.abs(Math.cos(angle * 6f)), 2.2);
+                float flower = MathUtils.clamp(1f - radius * 2.7f, 0f, 1f) * petals;
+                float ring = MathUtils.clamp(1f - Math.abs(radius - 0.27f) * 9.0f, 0f, 1f);
+                float motif = MathUtils.clamp(flower * 0.50f + ring * 0.18f, 0f, 1f);
+                float noise = smoothNoise(u * 18.0f + 4.3f, v * 16.0f + 1.7f);
+                float luminance = 0.68f + motif * 0.040f + (noise - 0.5f) * 0.018f;
 
                 int packed = lightmap.getPixel(x, y);
                 float baked = ((packed >>> 24) & 0xff) / 255f;
@@ -1519,21 +1511,17 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         Model barCap = mb.createBox(0.24f, 0.035f, 6.95f, barCapMaterial, attrs);
         models.add(new ModelInstance(barCap, 0f, 0.47f, 0f));
 
-        // Burgundy point rails sit just above the damask and below the raised
-        // alternating point inlays. The narrow gold perimeter makes each
-        // triangle read as a separate hand-inlaid panel instead of a flat decal.
-        pointRailModel = mb.createBox(0.85f, 0.026f, 3.20f,
+        // Burgundy backing panels remain, but the separate gold bars are removed:
+        // those coplanar strips were the source of the repeated horizontal lines
+        // across the playfield. The triangles themselves supply the clean graphic.
+        pointRailModel = mb.createBox(0.82f, 0.022f, 3.18f,
                 new Material(
-                        ColorAttribute.createDiffuse(0.30f, 0.07f, 0.09f, 1f),
-                        ColorAttribute.createSpecular(0.48f, 0.16f, 0.13f, 1f),
-                        FloatAttribute.createShininess(72f)), attrs);
-        pointGoldRailModel = mb.createBox(0.038f, 0.018f, 3.04f,
-                pointGoldMaterial(), attrs);
-        pointGoldEndModel = mb.createBox(0.76f, 0.018f, 0.038f,
-                pointGoldMaterial(), attrs);
+                        ColorAttribute.createDiffuse(0.24f, 0.045f, 0.065f, 1f),
+                        ColorAttribute.createSpecular(0.36f, 0.11f, 0.10f, 1f),
+                        FloatAttribute.createShininess(68f)), attrs);
         for (int i = 0; i < 12; i++) {
-            addPointRailInstances(XS[i], -2.02f, false);
-            addPointRailInstances(XS[i],  2.02f, true);
+            addPointRailInstance(XS[i], -2.02f);
+            addPointRailInstance(XS[i],  2.02f);
         }
 
         // Points on the damask: deep chocolate brown and ivory. The dark points sit
@@ -1599,33 +1587,33 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         // silhouette clean on modern phone displays while remaining lightweight.
         // Dark: glossy chocolate lacquer with a cream inlaid ring (like the
         // store-bought sets). Light: polished ivory with a tan inlaid ring.
-        darkChecker = createBeveledCheckerModel(darkCheckerTexture,
+        darkChecker = createLuxuryCheckerModel(darkCheckerTexture,
                 new Material(
-                        ColorAttribute.createDiffuse(0.11f, 0.055f, 0.030f, 1f),
-                        ColorAttribute.createSpecular(0.85f, 0.42f, 0.25f, 1f),
+                        ColorAttribute.createDiffuse(0.15f, 0.035f, 0.045f, 1f),
+                        ColorAttribute.createSpecular(0.68f, 0.25f, 0.22f, 1f),
                         FloatAttribute.createShininess(150f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.84f, 0.74f, 0.56f, 1f),
-                        ColorAttribute.createSpecular(0.75f, 0.65f, 0.48f, 1f),
+                        ColorAttribute.createDiffuse(0.72f, 0.54f, 0.28f, 1f),
+                        ColorAttribute.createSpecular(0.78f, 0.58f, 0.32f, 1f),
                         FloatAttribute.createShininess(130f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.15f, 0.075f, 0.038f, 1f),
-                        ColorAttribute.createSpecular(0.95f, 0.55f, 0.32f, 1f),
+                        ColorAttribute.createDiffuse(0.22f, 0.045f, 0.055f, 1f),
+                        ColorAttribute.createSpecular(0.78f, 0.30f, 0.25f, 1f),
                         FloatAttribute.createShininess(165f)),
                 attrs);
 
-        lightChecker = createBeveledCheckerModel(lightCheckerTexture,
+        lightChecker = createLuxuryCheckerModel(lightCheckerTexture,
                 new Material(
-                        ColorAttribute.createDiffuse(0.84f, 0.76f, 0.60f, 1f),
-                        ColorAttribute.createSpecular(0.86f, 0.74f, 0.52f, 1f),
+                        ColorAttribute.createDiffuse(0.72f, 0.66f, 0.54f, 1f),
+                        ColorAttribute.createSpecular(0.76f, 0.67f, 0.49f, 1f),
                         FloatAttribute.createShininess(118f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.70f, 0.54f, 0.33f, 1f),
-                        ColorAttribute.createSpecular(0.78f, 0.62f, 0.40f, 1f),
+                        ColorAttribute.createDiffuse(0.60f, 0.45f, 0.25f, 1f),
+                        ColorAttribute.createSpecular(0.70f, 0.53f, 0.30f, 1f),
                         FloatAttribute.createShininess(130f)),
                 new Material(
-                        ColorAttribute.createDiffuse(0.90f, 0.83f, 0.68f, 1f),
-                        ColorAttribute.createSpecular(0.85f, 0.76f, 0.58f, 1f),
+                        ColorAttribute.createDiffuse(0.82f, 0.75f, 0.60f, 1f),
+                        ColorAttribute.createSpecular(0.78f, 0.69f, 0.50f, 1f),
                         FloatAttribute.createShininess(120f)),
                 attrs);
 
@@ -1734,31 +1722,8 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         rebuildGameObjects();
     }
 
-    private Material pointGoldMaterial() {
-        Material m = new Material(
-                ColorAttribute.createDiffuse(0.72f, 0.55f, 0.24f, 1f),
-                ColorAttribute.createSpecular(0.88f, 0.68f, 0.30f, 1f),
-                FloatAttribute.createShininess(96f));
-        applyStudioReflection(m, 0.18f, 0.12f, 0.045f);
-        return m;
-    }
-
-    private void addPointRailInstances(float x, float z, boolean top) {
-        // The same symmetric rail is used on both halves; top is kept in the
-        // signature to make the two board orientations explicit at the callsite.
-        ModelInstance rail = new ModelInstance(pointRailModel, x, 0.174f, z);
-        models.add(rail);
-
-        float side = 0.382f;
-        ModelInstance leftGold = new ModelInstance(pointGoldRailModel, x - side, 0.190f, z);
-        ModelInstance rightGold = new ModelInstance(pointGoldRailModel, x + side, 0.190f, z);
-        models.add(leftGold);
-        models.add(rightGold);
-
-        ModelInstance nearGold = new ModelInstance(pointGoldEndModel, x, 0.190f, z - 1.515f);
-        ModelInstance farGold = new ModelInstance(pointGoldEndModel, x, 0.190f, z + 1.515f);
-        models.add(nearGold);
-        models.add(farGold);
+    private void addPointRailInstance(float x, float z) {
+        models.add(new ModelInstance(pointRailModel, x, 0.172f, z));
     }
 
     private Material dieFaceMaterial(int face) {
@@ -1859,7 +1824,9 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         p.triangle(a, c, d);
     }
 
-    private Model createBeveledCheckerModel(Texture topTexture, Material material, Material detailMaterial, Material rimMaterial, long attrs) {
+    private Model createLuxuryCheckerModel(Texture topTexture, Material material, Material detailMaterial, Material rimMaterial, long attrs) {
+        // Fresh turned-checker geometry: a real beveled disc with a recessed
+        // top inlay, clean side wall and no paper-thin stacked-card silhouette.
         // Controlled studio reflection on the curved bands creates a Fresnel-like
         // edge response without requiring a custom shader on mobile.
         applyStudioReflection(material, 0.18f, 0.07f, 0.055f);
@@ -1870,9 +1837,9 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         MeshPartBuilder p = mb.part("checker", GL20.GL_TRIANGLES, attrs, material);
 
         final int segments = 48;
-        final float radius = 0.42f;
-        final float bevelRadius = 0.042f;
-        final float half = 0.075f;
+        final float radius = 0.38f;
+        final float bevelRadius = 0.040f;
+        final float half = 0.085f;
         final float bevelY = 0.030f;
 
         for (int i = 0; i < segments; i++) {
@@ -1936,8 +1903,8 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         // center hub, built with explicit up-normals so mobile GPUs shade the
         // top face cleanly from the overhead camera.
         MeshPartBuilder ring = mb.part("checker_ring", GL20.GL_TRIANGLES, attrs, detailMaterial);
-        final float ringOuter = 0.300f;
-        final float ringInner = 0.238f;
+        final float ringOuter = 0.270f;
+        final float ringInner = 0.214f;
         final float ringY = topCenter.y + 0.0035f;
         for (int i = 0; i < segments; i++) {
             float a0 = MathUtils.PI2 * i / segments;
@@ -1956,8 +1923,8 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
 
         // Thin pinstripe near the rim, like the inlaid store-bought sets.
         MeshPartBuilder pinstripe = mb.part("checker_pinstripe", GL20.GL_TRIANGLES, attrs, detailMaterial);
-        final float pinOuter = 0.352f;
-        final float pinInner = 0.338f;
+        final float pinOuter = 0.315f;
+        final float pinInner = 0.302f;
         for (int i = 0; i < segments; i++) {
             float a0 = MathUtils.PI2 * i / segments;
             float a1 = MathUtils.PI2 * (i + 1) / segments;
@@ -1974,7 +1941,7 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         }
 
         MeshPartBuilder hub = mb.part("checker_hub", GL20.GL_TRIANGLES, attrs, rimMaterial);
-        final float hubRadius = 0.088f;
+        final float hubRadius = 0.074f;
         final Vector3 hubCenter = new Vector3(0f, ringY, 0f);
         for (int i = 0; i < 24; i++) {
             float a0 = MathUtils.PI2 * i / 24;
@@ -2426,8 +2393,6 @@ public final class BoardScreen extends ScreenAdapter implements InputProcessor {
         if (diceModel != null) diceModel.dispose();
         if (checkerShadowModel != null) checkerShadowModel.dispose();
         if (pointRailModel != null) pointRailModel.dispose();
-        if (pointGoldRailModel != null) pointGoldRailModel.dispose();
-        if (pointGoldEndModel != null) pointGoldEndModel.dispose();
         if (doublingCubeModel != null) doublingCubeModel.dispose();
         if (accentModel != null) accentModel.dispose();
         if (diceTrayModel != null) diceTrayModel.dispose();
